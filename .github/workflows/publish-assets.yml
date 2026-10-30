@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'assets-upload-*.zip'
+      - 'old-skins.zip'
       - '.github/workflows/publish-assets.yml'
   workflow_dispatch:
 permissions:
@@ -29,13 +30,15 @@ jobs:
           import zipfile, json, hashlib
           site = Path('_site')
           site.mkdir(exist_ok=True)
-          for name in ['assets-upload-1.zip', 'assets-upload-2.zip']:
+          def extract(name):
               with zipfile.ZipFile(name) as archive:
                   for item in archive.infolist():
                       target = (site / item.filename).resolve()
                       if not target.is_relative_to(site.resolve()):
                           raise ValueError('Invalid archive path')
                   archive.extractall(site)
+          for name in ['assets-upload-1.zip', 'assets-upload-2.zip']:
+              extract(name)
           manifest = json.loads((site / 'manifest.json').read_text())
           for item in manifest:
               data = (site / item['file']).read_bytes()
@@ -43,9 +46,23 @@ jobs:
                   raise ValueError('Image hash mismatch: ' + item['file'])
           if len(manifest) != 649:
               raise ValueError('Expected 649 images')
-          (site / '.nojekyll').touch()
-          (site / 'index.html').write_text('<!doctype html><meta charset="utf-8"><title>Dedicated Assets</title><h1>Dedicated Assets</h1><p>649 images ready.</p>')
           print('Verified and prepared 649 images')
+          # Old realistic skins (old-skins.zip -> _site/old-skins/...)
+          old_count = 0
+          if Path('old-skins.zip').exists():
+              extract('old-skins.zip')
+              index_path = site / 'old-skins' / 'index.json'
+              if not index_path.exists():
+                  raise ValueError('old-skins/index.json not found in old-skins.zip')
+              index = json.loads(index_path.read_text(encoding='utf-8'))
+              for skin in index['skins']:
+                  for key, rel in skin['files'].items():
+                      if not (site / 'old-skins' / rel).exists():
+                          raise ValueError('Missing old skin image: ' + rel)
+              old_count = len(index['skins'])
+              print('Prepared old skins: ' + str(old_count))
+          (site / '.nojekyll').touch()
+          (site / 'index.html').write_text('<!doctype html><meta charset="utf-8"><title>Dedicated Assets</title><h1>Dedicated Assets</h1><p>649 images ready.</p><p>Old skins: ' + str(old_count) + '</p>')
           PYTHON
       - uses: actions/upload-pages-artifact@v4
         with:
